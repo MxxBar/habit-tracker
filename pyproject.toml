@@ -1,0 +1,22 @@
+[project]
+name = "habit-tracker"
+version = "0.1.0"
+description = "A CLI habit tracker with streaks, stats, and progress visualization"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "click>=8.3.1",
+    "hatchling>=1.29.0",
+]
+
+[project.scripts]
+habits = "habit_tracker.cli:cli"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
