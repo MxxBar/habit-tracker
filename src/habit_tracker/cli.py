@@ -35,8 +35,11 @@ def cmd_add(name):
 def cmd_remove(name):
     """Remove a habit."""
     try:
+        click.confirm(f"Are you sure you want to remove '{name}'?", abort=True)
         remove_habit(name)
         click.echo(f"Removed habit: '{name}'")
+    except click.Abort:
+        click.echo("Cancelled.")
     except ValueError as e:
         click.echo(f"Error: {e}", err=True)
 
@@ -120,3 +123,20 @@ def cmd_summary():
     click.echo()
     click.echo(render_all_summary())
     click.echo()
+
+@cli.command("history")
+@click.argument("name")
+def cmd_history(name):
+    """Show all logged completion dates for a habit."""
+    try:
+        from .logging import get_completions
+        completions = get_completions(name)
+        if not completions:
+            click.echo(f"No completions logged for '{name}' yet.")
+            return
+        click.echo(f"\n  Completion history for '{name}':")
+        for d in reversed(completions):
+            click.echo(f"    {d.strftime('%Y-%m-%d  (%A)')}")
+        click.echo(f"\n  Total: {len(completions)} day(s) logged\n")
+    except ValueError as e:
+        click.echo(f"Error: {e}", err=True)
