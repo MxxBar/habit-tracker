@@ -32,7 +32,8 @@ def init_db(db_path: Path | None = None) -> None:
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
                 name        TEXT    NOT NULL UNIQUE COLLATE NOCASE,
                 created_at  TEXT    NOT NULL DEFAULT (date('now')),
-                active      INTEGER NOT NULL DEFAULT 1
+                active      INTEGER NOT NULL DEFAULT 1,
+                weekly_goal INTEGER NOT NULL DEFAULT 7
             );
 
             CREATE TABLE IF NOT EXISTS completions (
@@ -41,5 +42,16 @@ def init_db(db_path: Path | None = None) -> None:
                 date        TEXT    NOT NULL,
                 UNIQUE(habit_id, date)
             );
+
+            CREATE TABLE IF NOT EXISTS freezes (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                habit_id    INTEGER NOT NULL REFERENCES habits(id),
+                date        TEXT    NOT NULL,
+                UNIQUE(habit_id, date)
+            );
         """)
+        try:
+            conn.execute("ALTER TABLE habits ADD COLUMN weekly_goal INTEGER NOT NULL DEFAULT 7")
+        except Exception:
+            pass
     conn.close()

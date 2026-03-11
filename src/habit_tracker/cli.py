@@ -67,6 +67,21 @@ def cmd_log(name, log_date):
         log_completion(name, d)
         label = log_date or "today"
         click.echo(f"Logged '{name}' for {label}")
+
+        # Motivational message based on streak
+        streak = current_streak(name)
+        if streak == 1:
+            click.echo(click.style("  Great start! Day 1 in the books.", fg="cyan"))
+        elif streak == 3:
+            click.echo(click.style("  3 days strong! You're building a habit.", fg="cyan"))
+        elif streak == 7:
+            click.echo(click.style("  One week streak! You're on fire!", fg="yellow", bold=True))
+        elif streak == 14:
+            click.echo(click.style("  Two weeks! This is becoming second nature.", fg="yellow", bold=True))
+        elif streak == 30:
+            click.echo(click.style("  30 DAYS! You're a habit machine!", fg="green", bold=True))
+        elif streak > 30:
+            click.echo(click.style(f"  {streak} days and counting. Unstoppable.", fg="green", bold=True))
     except ValueError as e:
         click.echo(f"Error: {e}", err=True)
 
@@ -92,13 +107,36 @@ def cmd_unlog(name, log_date):
 def cmd_stats(name):
     """Show streak and completion stats for a habit."""
     try:
+        from .db import get_connection, init_db
+        init_db()
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT * FROM habits WHERE name = ? COLLATE NOCASE AND active = 1", (name,)
+        ).fetchone()
+        conn.close()
+
         cur = current_streak(name)
         lng = longest_streak(name)
         rate = completion_rate(name, 30)
+
+        # Weekly progress
+        from .logging import get_completions
+        from datetime import date, timedelta
+        today = date.today()
+        start_of_week = today - timedelta(days=today.weekday())
+        completions_this_week = sum(
+            1 for d in get_completions(name)
+            if d >= start_of_week
+        )
+        weekly_goal = row["weekly_goal"] if row else 7
+        goal_str = f"{completions_this_week}/{weekly_goal} days this week"
+        goal_color = "green" if completions_this_week >= weekly_goal else "yellow"
+
         click.echo(f"\n  Stats for '{name}'")
         click.echo(f"  Current streak : {cur} day(s)")
         click.echo(f"  Longest streak : {lng} day(s)")
-        click.echo(f"  30-day rate    : {rate:.0%}\n")
+        click.echo(f"  30-day rate    : {rate:.0%}")
+        click.echo(f"  Weekly goal    : {click.style(goal_str, fg=goal_color)}\n")
     except ValueError as e:
         click.echo(f"Error: {e}", err=True)
 
@@ -138,5 +176,80 @@ def cmd_history(name):
         for d in reversed(completions):
             click.echo(f"    {d.strftime('%Y-%m-%d  (%A)')}")
         click.echo(f"\n  Total: {len(completions)} day(s) logged\n")
+    except ValueError as e:
+        click.echo(f"Error: {e}", err=True)
+        
+
+
+@cli.command("goal")
+@click.argument("name")
+@click.argument("days", type=int)
+def cmd_goal(name, days):
+    """Set a weekly goal (1-7 days per week) for a habit."""
+    if not 1 <= days <= 7:
+        click.echo("Error: Goal must be between 1 and 7 days per week.", err=True)
+        return
+    try:
+        from .db import get_connection, init_db
+        init_db()
+        conn = get_connection()
+        habit = conn.execute(
+            "SELECT * FROM habits WHERE name = ? COLLATE NOCASE AND active = 1", (name,)
+        ).fetchone()
+        if not habit:
+            click.echo(f"Error: Habit '{name}' not found.", err=True)
+            return
+        with conn:
+            conn.execute(
+                "UPDATE habits SET weekly_goal = ? WHERE id = ?", (days, habit["id"])
+            )
+        conn.close()
+        click.echo(f"Goal set: '{name}' → {days} day(s) per week")
+    except ValueError as e:
+        click.echo(f"Error: {e}", err=True)
+
+@cli.command("freeze")
+@click.argument("name")
+@click.option("--date", "freeze_date", default=None, help="Date YYYY-MM-DD (default: today)")
+def cmd_freeze(name, freeze_date):
+    """Use a streak freeze to protect your streak for a missed day."""
+    try:
+        from .db import get_connection, init_db
+        from .habits import get_habit
+        import sqlite3
+        init_db()
+        habit = get_habit(name)
+        d = date.fromisoformat(freeze_date) if freeze_date else date.today()
+        conn = get_connection()
+        try:
+            with conn:
+                conn.execute(
+                    "INSERT INTO freezes (habit_id, date) VALUES (?, ?)",
+                    (habit["id"], d.isoformat()),
+                )
+            click.echo(f"❄️  Streak freeze applied for '{name}' on {d}")
+            click.echo(click.style("  Your streak is protected!", fg="cyan"))
+        except sqlite3.IntegrityError:
+            click.echo(f"Already frozen for '{name}' on {d}.")
+        finally:
+            conn.close()
+    except ValueError as e:
+        click.echo(f"Error: {e}", err=True)
+
+
+@cli.command("freezes")
+@click.argument("name")
+def cmd_freezes(name):
+    """Show all streak freezes used for a habit."""
+    try:
+        from .stats import get_freezes
+        freezes = sorted(get_freezes(name))
+        if not freezes:
+            click.echo(f"No freezes used for '{name}'.")
+            return
+        click.echo(f"\n  Streak freezes for '{name}':")
+        for d in reversed(freezes):
+            click.echo(f"    ❄️  {d.strftime('%Y-%m-%d  (%A)')}")
+        click.echo(f"\n  Total: {len(freezes)} freeze(s) used\n")
     except ValueError as e:
         click.echo(f"Error: {e}", err=True)
